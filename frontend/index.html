@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DrowsyGuard — Driver Safety Monitor</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&family=Space+Grotesk:wght@300;400;500;600&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+  <!-- ── Ambient background particles ── -->
+  <div class="bg-grid"></div>
+  <div class="scanline"></div>
+
+  <!-- ── Header ── -->
+  <header class="header">
+    <div class="header-left">
+      <div class="logo">
+        <span class="logo-icon">◈</span>
+        <span class="logo-text">DROWSY<strong>GUARD</strong></span>
+      </div>
+      <span class="badge">v1.0 · ML Vision System</span>
+    </div>
+    <div class="header-right">
+      <div class="session-timer" id="sessionTimer">
+        <span class="timer-label">SESSION</span>
+        <span class="timer-value" id="timerDisplay">00:00:00</span>
+      </div>
+      <div class="conn-indicator" id="connIndicator">
+        <span class="conn-dot"></span>
+        <span class="conn-text">CONNECTING</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ── Main layout ── -->
+  <main class="main">
+
+    <!-- ── Left column: video feed ── -->
+    <section class="video-panel">
+      <div class="panel-label">LIVE CAMERA FEED</div>
+
+      <div class="video-container" id="videoContainer">
+        <!-- Overlay for status -->
+        <div class="video-overlay" id="videoOverlay">
+          <div class="overlay-status" id="overlayStatus">CAMERA OFF</div>
+        </div>
+
+        <!-- MJPEG stream from Flask -->
+        <img
+          id="videoStream"
+          src=""
+          alt="Camera feed"
+          class="video-stream"
+        />
+
+        <!-- Corner decorations -->
+        <div class="corner tl"></div>
+        <div class="corner tr"></div>
+        <div class="corner bl"></div>
+        <div class="corner br"></div>
+      </div>
+
+      <!-- Camera controls -->
+      <div class="camera-controls">
+        <button id="startBtn" class="btn btn-start" onclick="startCamera()">
+          <span class="btn-icon">▶</span> START MONITOR
+        </button>
+        <button id="stopBtn" class="btn btn-stop" onclick="stopCamera()" disabled>
+          <span class="btn-icon">■</span> STOP
+        </button>
+      </div>
+    </section>
+
+    <!-- ── Right column: status dashboard ── -->
+    <aside class="dashboard">
+
+      <!-- Status card -->
+      <div class="status-card" id="statusCard">
+        <div class="status-label">DRIVER STATUS</div>
+        <div class="status-indicator" id="statusIndicator">
+          <div class="status-dot" id="statusDot"></div>
+          <div class="status-text" id="statusText">—</div>
+        </div>
+        <div class="status-sub" id="statusSub">System Idle</div>
+      </div>
+
+      <!-- Metric gauges -->
+      <div class="metrics-grid">
+
+        <!-- EAR gauge -->
+        <div class="metric-card" id="earCard">
+          <div class="metric-header">
+            <span class="metric-name">EAR</span>
+            <span class="metric-full">Eye Aspect Ratio</span>
+          </div>
+          <div class="metric-value" id="earValue">—</div>
+          <div class="metric-bar-wrap">
+            <div class="metric-bar">
+              <div class="metric-fill ear-fill" id="earFill"></div>
+            </div>
+            <span class="metric-threshold">threshold: 0.25</span>
+          </div>
+        </div>
+
+        <!-- MAR gauge -->
+        <div class="metric-card" id="marCard">
+          <div class="metric-header">
+            <span class="metric-name">MAR</span>
+            <span class="metric-full">Mouth Aspect Ratio</span>
+          </div>
+          <div class="metric-value" id="marValue">—</div>
+          <div class="metric-bar-wrap">
+            <div class="metric-bar">
+              <div class="metric-fill mar-fill" id="marFill"></div>
+            </div>
+            <span class="metric-threshold">threshold: 0.60</span>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Drowsiness score -->
+      <div class="score-card">
+        <div class="score-label">DROWSINESS SCORE</div>
+        <div class="score-ring-wrap">
+          <svg class="score-ring" viewBox="0 0 120 120">
+            <circle class="ring-bg" cx="60" cy="60" r="50"/>
+            <circle class="ring-fill" id="ringFill" cx="60" cy="60" r="50"
+              stroke-dasharray="314" stroke-dashoffset="314"/>
+          </svg>
+          <div class="score-number" id="scoreNumber">0</div>
+          <div class="score-unit">/ 100</div>
+        </div>
+        <div class="score-sub" id="scoreSub">No data</div>
+      </div>
+
+      <!-- Frame counters -->
+      <div class="counters-row">
+        <div class="counter-item">
+          <span class="counter-val" id="frameCount">0</span>
+          <span class="counter-lbl">Eye Closed Frames</span>
+        </div>
+        <div class="counter-item">
+          <span class="counter-val" id="yawnCount">0</span>
+          <span class="counter-lbl">Yawn Frames</span>
+        </div>
+      </div>
+
+    </aside>
+  </main>
+
+  <!-- ── ALERT POPUP ── -->
+  <div class="alert-popup" id="alertPopup">
+    <div class="alert-icon" id="alertIcon">⚠</div>
+    <div class="alert-title" id="alertTitle">DROWSINESS DETECTED</div>
+    <div class="alert-msg" id="alertMsg">Driver appears to be falling asleep. Please pull over safely.</div>
+    <button class="alert-dismiss" onclick="dismissAlert()">ACKNOWLEDGE</button>
+  </div>
+  <div class="alert-backdrop" id="alertBackdrop" onclick="dismissAlert()"></div>
+
+  <!-- ── Footer ── -->
+  <footer class="footer">
+    <span>DrowsyGuard · Computer Vision & ML Drowsiness Detection · College Project</span>
+    <span>OpenCV · Dlib · Flask · Python</span>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
