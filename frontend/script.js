@@ -1,4 +1,4 @@
-/**
+/**navigator.mediaDevices.getUserMedia({ video: true })
  * script.js
  * DrowsyGuard frontend — handles:
  *   - Camera start/stop via Flask API
@@ -12,7 +12,7 @@
 // Config
 // ──────────────────────────────────────────────
 const API_BASE = "http://localhost:5000";
-const POLL_INTERVAL_MS = 800;
+const POLL_INTERVAL_MS = 500; // smaller interval for faster status updates
 
 // ──────────────────────────────────────────────
 // State
@@ -72,13 +72,23 @@ const alertMsg        = document.getElementById("alertMsg");
 
 async function startCamera() {
   try {
+    // immediate UI feedback to user
+    overlayStatus.textContent = "STARTING...";
+    startBtn.disabled = true;
+    stopBtn.disabled = true;
+
     const res = await fetch(`${API_BASE}/start`, { method: "POST" });
     const data = await res.json();
 
     if (data.success) {
-      // Show video stream
-      videoStream.src = `${API_BASE}/video_feed`;
-      videoOverlay.classList.add("hidden");
+      // Show video stream and set status while first frame appears
+      videoStream.src = `${API_BASE}/video_feed?ts=${Date.now()}`;
+      videoOverlay.classList.remove("hidden");
+      overlayStatus.textContent = "WAITING FOR VIDEO...";
+
+      videoStream.onload = () => {
+        videoOverlay.classList.add("hidden");
+      };
 
       startBtn.disabled = true;
       stopBtn.disabled = false;
@@ -88,16 +98,23 @@ async function startCamera() {
       if (sessionInterval) clearInterval(sessionInterval);
       sessionInterval = setInterval(tickTimer, 1000);
 
-      // Start polling
+      // Start polling (immediate check + interval)
+      fetchStatus();
       startPolling();
 
       setConnection("connected");
     } else {
       alert("Failed to start: " + data.message);
+      overlayStatus.textContent = "CAMERA OFF";
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
     }
   } catch (err) {
     console.error("Start error:", err);
     alert("Cannot connect to backend.\nMake sure the Flask server is running on port 5000.");
+    overlayStatus.textContent = "CAMERA OFF";
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
     setConnection("error");
   }
 }
@@ -238,6 +255,9 @@ function updateDashboard(data) {
   }
 
   lastStatus = status;
+
+  // ── Update performance metrics and advanced features ──
+  updatePerformanceMetrics(data);
 }
 
 function resetDashboard() {
@@ -387,6 +407,156 @@ async function checkBackend() {
   } catch {
     setConnection("error");
     console.warn("Backend not reachable. Start Flask server first.");
+  }
+}
+
+// ──────────────────────────────────────────────
+// Advanced Features: Calibration, Settings, Analytics
+// ──────────────────────────────────────────────
+
+// Calibration Mode
+async function startCalibration() {
+  try {
+    const res = await fetch(`${API_BASE}/calibrate/start`, { method: "POST" });
+    const data = await res.json();
+    alert("Calibration started! Keep your face visible and eyes open for 30 frames (~1 sec).");
+    
+    // Auto-end calibration after 3 seconds
+    setTimeout(endCalibration, 3000);
+  } catch (err) {
+    console.error("Calibration error:", err);
+  }
+}
+
+async function endCalibration() {
+  try {
+    const res = await fetch(`${API_BASE}/calibrate/end`, { method: "POST" });
+    const data = await res.json();
+    alert(data.message);
+    if (data.baseline) {
+      console.log("Calibration baseline:", data.baseline);
+    }
+  } catch (err) {
+    console.error("Calibration end error:", err);
+  }
+}
+
+// Threshold Adjustment
+document.getElementById("earThreshold")?.addEventListener("input", function(e) {
+  const value = parseFloat(e.target.value);
+  document.getElementById("earThresholdValue").textContent = value.toFixed(2);
+  updateThresholds();
+});
+
+document.getElementById("marThreshold")?.addEventListener("input", function(e) {
+  const value = parseFloat(e.target.value);
+  document.getElementById("marThresholdValue").textContent = value.toFixed(2);
+  updateThresholds();
+});
+
+async function updateThresholds() {
+  const earThresh = parseFloat(document.getElementById("earThreshold").value);
+  const marThresh = parseFloat(document.getElementById("marThreshold").value);
+  
+  try {
+    const res = await fetch(`${API_BASE}/settings/thresholds`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ear_threshold: earThresh, mar_threshold: marThresh })
+    });
+    const data = await res.json();
+    console.log("Thresholds updated:", data);
+  } catch (err) {
+    console.error("Threshold update error:", err);
+  }
+}
+
+// Statistics Modal
+function showStatistics() {
+  const modal = document.getElementById("statsModal");
+  const backdrop = document.getElementById("statsModalBackdrop");
+  
+  fetchStatistics();
+  
+  modal.classList.add("visible");
+  backdrop.classList.add("visible");
+}
+
+function closeModal(modalId) {
+  const modal = document.getElementById(modalId);
+  const backdrop = document.getElementById(modalId + "Backdrop");
+  
+  if (modal) modal.classList.remove("visible");
+  if (backdrop) backdrop.classList.remove("visible");
+}
+
+async function fetchStatistics() {
+  try {
+    const res = await fetch(`${API_BASE}/statistics`);
+    const data = await res.json();
+    
+    if (data.statistics) {
+      const stats = data.statistics;
+      document.getElementById("statDuration").textContent = `${Math.floor(stats.session_duration / 60)}m ${stats.session_duration % 60}s`;
+      document.getElementById("statDrowsy").textContent = stats.drowsy_episodes;
+      document.getElementById("statYawns").textContent = stats.yawn_count;
+      document.getElementById("statDrowsyTime").textContent = `${Math.floor(stats.total_drowsy_time)}s`;
+      document.getElementById("statDrowsyPercent").textContent = `${stats.drowsy_percentage}%`;
+      document.getElementById("statPeakScore").textContent = stats.peak_drowsiness_score;
+    }
+    
+    if (data.break_suggestion) {
+      const riskCard = document.getElementById("riskCard");
+      const riskLevel = document.getElementById("riskLevel");
+      const riskMessage = document.getElementById("riskMessage");
+      
+      riskLevel.textContent = data.break_suggestion.urgency;
+      riskMessage.textContent = data.break_suggestion.message;
+      
+      if (data.break_suggestion.recommend_break) {
+        riskCard.style.display = "block";
+      }
+    }
+  } catch (err) {
+    console.error("Statistics fetch error:", err);
+  }
+}
+
+// CSV Export
+async function exportCSV() {
+  try {
+    const res = await fetch(`${API_BASE}/export/csv`);
+    if (res.ok) {
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "drowsiness_session.csv";
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      alert("Session data exported!");
+    }
+  } catch (err) {
+    console.error("CSV export error:", err);
+    alert("Failed to export data.");
+  }
+}
+
+// Update Performance Metrics in Status Display
+function updatePerformanceMetrics(status) {
+  if (status.fps !== undefined) {
+    document.getElementById("fpsDisplay").textContent = `${status.fps} FPS`;
+  }
+  if (status.latency_ms !== undefined) {
+    document.getElementById("latencyDisplay").textContent = `${status.latency_ms}ms`;
+  }
+  if (status.risk_level) {
+    const riskCard = document.getElementById("riskCard");
+    riskCard.style.display = "block";
+    document.getElementById("riskLevel").textContent = status.risk_level.label;
+    document.getElementById("riskLevel").style.color = status.risk_level.color;
   }
 }
 

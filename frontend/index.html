@@ -149,8 +149,98 @@
         </div>
       </div>
 
+      <!-- Performance Metrics -->
+      <div class="metrics-row">
+        <div class="metric-badge">
+          <span class="metric-label">FPS</span>
+          <span class="metric-display" id="fpsDisplay">—</span>
+        </div>
+        <div class="metric-badge">
+          <span class="metric-label">Latency</span>
+          <span class="metric-display" id="latencyDisplay">—</span>
+        </div>
+      </div>
+
+      <!-- Risk Level & Break Suggestion -->
+      <div class="risk-card" id="riskCard" style="display:none;">
+        <div class="risk-label">RISK ASSESSMENT</div>
+        <div class="risk-level" id="riskLevel">—</div>
+        <div class="risk-message" id="riskMessage">—</div>
+      </div>
+
+      <!-- Advanced Controls -->
+      <div class="controls-section">
+        <div class="control-group">
+          <label for="earThreshold">EAR Threshold</label>
+          <div class="threshold-control">
+            <input type="range" id="earThreshold" min="0.1" max="0.5" step="0.05" value="0.3">
+            <span id="earThresholdValue">0.3</span>
+          </div>
+        </div>
+        <div class="control-group">
+          <label for="marThreshold">MAR Threshold</label>
+          <div class="threshold-control">
+            <input type="range" id="marThreshold" min="0.2" max="0.8" step="0.05" value="0.4">
+            <span id="marThresholdValue">0.4</span>
+          </div>
+        </div>
+        <button id="calibrateBtn" class="btn btn-secondary" onclick="startCalibration()" style="width:100%; margin-top:10px;">
+          <span class="btn-icon">⚙</span> CALIBRATE
+        </button>
+      </div>
+
+      <!-- Stats & Export -->
+      <div class="stats-section">
+        <button id="statsBtn" class="btn btn-secondary" onclick="showStatistics()" style="width:100%; margin-bottom:8px;">
+          <span class="btn-icon">📊</span> STATISTICS
+        </button>
+        <button id="exportBtn" class="btn btn-secondary" onclick="exportCSV()" style="width:100%;">
+          <span class="btn-icon">💾</span> EXPORT DATA
+        </button>
+      </div>
+
     </aside>
   </main>
+
+  <!-- ── Statistics Modal ── -->
+  <div class="modal" id="statsModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Session Statistics</h2>
+        <button class="modal-close" onclick="closeModal('statsModal')">✕</button>
+      </div>
+      <div class="modal-body" id="modalBody">
+        <div class="stat-item">
+          <span class="stat-label">Session Duration</span>
+          <span class="stat-value" id="statDuration">—</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">Drowsy Episodes</span>
+          <span class="stat-value" id="statDrowsy">—</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">Yawn Count</span>
+          <span class="stat-value" id="statYawns">—</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">Total Drowsy Time</span>
+          <span class="stat-value" id="statDrowsyTime">—</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">Drowsy Percentage</span>
+          <span class="stat-value" id="statDrowsyPercent">—</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">Peak Drowsiness Score</span>
+          <span class="stat-value" id="statPeakScore">—</span>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('statsModal')">CLOSE</button>
+      </div>
+    </div>
+  </div>
+  <div class="modal-backdrop" id="statsModalBackdrop" onclick="closeModal('statsModal')"></div>
 
   <!-- ── ALERT POPUP ── -->
   <div class="alert-popup" id="alertPopup">

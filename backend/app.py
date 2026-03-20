@@ -2,7 +2,7 @@
 # Flask backend for Driver Drowsiness Detection System
 
 import os
-from flask import Flask, Response, jsonify, send_from_directory
+from flask import Flask, Response, jsonify, send_from_directory, request
 from flask_cors import CORS
 from dotenv import load_dotenv
 from drowsiness_detector import DrowsinessDetector
@@ -112,6 +112,84 @@ def stop_camera():
 def health():
     """Health check endpoint."""
     return jsonify({"status": "ok", "model_loaded": True})
+
+
+# ──────────────────────────────────────────────
+# Advanced Features: Calibration, Settings, Analytics
+# ──────────────────────────────────────────────
+
+@app.route("/calibrate/start", methods=["POST"])
+def calibrate_start():
+    """Start calibration mode."""
+    result = detector.start_calibration()
+    return jsonify(result)
+
+
+@app.route("/calibrate/end", methods=["POST"])
+def calibrate_end():
+    """End calibration and compute baselines."""
+    result = detector.end_calibration()
+    return jsonify(result)
+
+
+@app.route("/settings/thresholds", methods=["GET", "POST"])
+def manage_thresholds():
+    """Get or update EAR/MAR thresholds."""
+    if request.method == "POST":
+        data = request.get_json()
+        result = detector.update_thresholds(
+            data.get("ear_threshold"),
+            data.get("mar_threshold")
+        )
+        return jsonify(result)
+    else:
+        return jsonify({
+            "ear_threshold": detector.ear_threshold,
+            "mar_threshold": detector.mar_threshold
+        })
+
+
+@app.route("/statistics")
+def statistics():
+    """Return session statistics and break recommendations."""
+    status = detector.get_status()
+    return jsonify({
+        "statistics": status.get("statistics"),
+        "break_suggestion": status.get("break_suggestion"),
+        "risk_level": status.get("risk_level")
+    })
+
+
+@app.route("/metrics")
+def metrics():
+    """Return performance metrics (FPS, latency)."""
+    return jsonify(detector.get_performance_metrics())
+
+
+@app.route("/export/csv")
+def export_csv():
+    """Export session data as CSV."""
+    try:
+        filepath = detector.session_manager.export_csv()
+        with open(filepath, 'rb') as f:
+            csv_data = f.read()
+        return Response(
+            csv_data,
+            mimetype="text/csv",
+            headers={"Content-Disposition": "attachment;filename=drowsiness_session.csv"}
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/history")
+def history():
+    """Get session history."""
+    try:
+        session_history = detector.session_manager.get_history()
+        return jsonify({"history": session_history})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 # ──────────────────────────────────────────────
