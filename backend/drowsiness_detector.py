@@ -18,7 +18,7 @@ EAR_THRESHOLD = 0.3         # EAR below this → eyes closing (lower = more sens
 MAR_THRESHOLD = 0.4         # MAR above this → mouth opening/yawning (lower = catches earlier)
 EAR_CONSEC_FRAMES = 30      # Consecutive frames before declaring drowsy (~1 second at 30 FPS)
 YAWN_CONSEC_FRAMES = 8      # Consecutive frames of open mouth before yawn alert
-MAX_FACES = 5               # Support multi-face detection (up to 5 drivers)
+MAX_FACES = 1               # Single face detection for focused monitoring
 
 # MediaPipe face mesh indices for eyes and mouth
 # References: https://github.com/google/mediapipe/blob/master/mediapipe/python/solutions/face_mesh_connections.py
@@ -204,60 +204,78 @@ class DrowsinessDetector:
             new_status = "Alert"
             new_ear = 0.0
             new_mar = 0.0
+            face_count = 0
 
             if results.multi_face_landmarks:
-                # Process primary face (index 0)
-                landmarks = results.multi_face_landmarks[0]
-                landmarks_array = np.array([(lm.x * frame.shape[1], lm.y * frame.shape[0]) for lm in landmarks.landmark])
+                ear_values = []
+                mar_values = []
+                statuses = []
 
-                # ── Eye Aspect Ratio ──
-                left_ear = eye_aspect_ratio(landmarks_array, LEFT_EYE_INDICES)
-                right_ear = eye_aspect_ratio(landmarks_array, RIGHT_EYE_INDICES)
-                avg_ear = (left_ear + right_ear) / 2.0
-                new_ear = round(avg_ear, 3)
+                for face_idx, landmarks in enumerate(results.multi_face_landmarks):
+                    landmarks_array = np.array([(lm.x * frame.shape[1], lm.y * frame.shape[0]) for lm in landmarks.landmark])
 
-                # ── Mouth Aspect Ratio ──
-                new_mar = round(mouth_aspect_ratio(landmarks_array, MOUTH_INDICES), 3)
+                    # ── Eye Aspect Ratio ──
+                    left_ear = eye_aspect_ratio(landmarks_array, LEFT_EYE_INDICES)
+                    right_ear = eye_aspect_ratio(landmarks_array, RIGHT_EYE_INDICES)
+                    avg_ear = (left_ear + right_ear) / 2.0
+                    ear_values.append(avg_ear)
 
-                # ── Calibration mode recording ──
-                if self.risk_assessment.is_calibrating:
-                    self.risk_assessment.record_calibration_frame(avg_ear, new_mar)
+                    # ── Mouth Aspect Ratio ──
+                    mar = mouth_aspect_ratio(landmarks_array, MOUTH_INDICES)
+                    mar_values.append(mar)
 
-                # ── Drowsiness logic ──
-                with self.lock:
-                    # Use dynamic thresholds
-                    if avg_ear < self.ear_threshold:
-                        self.frame_counter += 1
-                        if self.frame_counter >= self.ear_consec_frames:
-                            new_status = "Drowsy"
-                            self._trigger_alarm()
-                    else:
-                        self.frame_counter = 0
+                    # ── Calibration mode recording ──
+                    if self.risk_assessment.is_calibrating:
+                        self.risk_assessment.record_calibration_frame(avg_ear, mar)
 
-                    if new_mar > self.mar_threshold:
-                        self.yawn_counter += 1
-                        if self.yawn_counter >= self.yawn_consec_frames:
-                            if new_status == "Alert":
-                                new_status = "Yawning"
-                            self._trigger_alarm()
-                            self.session_manager.record_yawn(time.time(), new_mar)
-                    else:
-                        self.yawn_counter = 0
+                    # ── Drowsiness logic for this face ──
+                    face_status = "Alert"
+                    with self.lock:
+                        # Use dynamic thresholds
+                        if avg_ear < self.ear_threshold:
+                            self.frame_counter += 1
+                            if self.frame_counter >= self.ear_consec_frames:
+                                face_status = "Drowsy"
+                        else:
+                            self.frame_counter = 0
 
-                    if new_status == "Alert":
-                        self._stop_alarm()
+                        if mar > self.mar_threshold:
+                            self.yawn_counter += 1
+                            if self.yawn_counter >= self.yawn_consec_frames:
+                                if face_status == "Alert":
+                                    face_status = "Yawning"
+                        else:
+                            self.yawn_counter = 0
 
-                    # Update EAR history and score
-                    self.ear_history.append(avg_ear)
-                    if len(self.ear_history) > 30:
-                        self.ear_history.pop(0)
-                    self.score = compute_drowsiness_score(avg_ear, new_mar, self.ear_history, 
-                                                         self.ear_threshold, self.mar_threshold)
+                    statuses.append(face_status)
 
-                # Support multi-face detection (log additional faces)
-                if len(results.multi_face_landmarks) > 1:
-                    num_faces = len(results.multi_face_landmarks)
-                    # Could extend to track multiple drivers
+                    # Draw landmarks for this face
+                    frame = self._draw_landmarks(frame, landmarks_array, avg_ear, mar, face_status)
+
+                # ── Aggregate results across all faces ──
+                # Overall status: Drowsy if any face is drowsy, Yawning if any is yawning but none drowsy, else Alert
+                if "Drowsy" in statuses:
+                    new_status = "Drowsy"
+                    self._trigger_alarm()
+                elif "Yawning" in statuses:
+                    new_status = "Yawning"
+                    self._trigger_alarm()
+                else:
+                    new_status = "Alert"
+                    self._stop_alarm()
+
+                # Average EAR and MAR across all faces
+                new_ear = round(np.mean(ear_values), 3)
+                new_mar = round(np.mean(mar_values), 3)
+
+                # Update EAR history and score using averages
+                self.ear_history.append(new_ear)
+                if len(self.ear_history) > 30:
+                    self.ear_history.pop(0)
+                self.score = compute_drowsiness_score(new_ear, new_mar, self.ear_history, 
+                                                     self.ear_threshold, self.mar_threshold)
+
+                face_count = len(results.multi_face_landmarks)
 
             else:
                 # No face detected
@@ -276,9 +294,10 @@ class DrowsinessDetector:
             # Store current frame for streaming
             self.current_frame = frame
 
-            # ── Draw landmarks on frame ──
-            if results.multi_face_landmarks:
-                frame = self._draw_landmarks(frame, landmarks_array, avg_ear, new_mar, new_status)
+            # ── Draw face count ──
+            if face_count > 0:
+                cv2.putText(frame, f"Faces: {face_count}", (10, 80),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
             else:
                 cv2.putText(frame, "No face detected", (10, 30),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 165, 255), 2)
